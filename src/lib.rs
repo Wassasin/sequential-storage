@@ -24,6 +24,7 @@ mod heapless_impl;
 mod item;
 pub mod map;
 pub mod queue;
+pub mod ringbuffer;
 
 #[cfg(any(test, doctest, feature = "_test"))]
 /// An in-memory flash type that can be used for mocking.
