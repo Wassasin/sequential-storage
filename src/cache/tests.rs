@@ -229,3 +229,27 @@ mod map_tests {
         start_snapshot.compare_to(storage.flash().stats_snapshot())
     }
 }
+
+#[cfg(test)]
+mod general_tests {
+    use crate::cache::{KeyPointerCache, NoCache, PagePointerCache, PageStateCache};
+
+    #[test]
+    fn cache_size() {
+        assert_eq!(core::mem::size_of::<NoCache>(), 0);
+        // 1 * num pages + 1
+        assert_eq!(core::mem::size_of::<PageStateCache<0>>(), 1);
+        assert_eq!(core::mem::size_of::<PageStateCache<1>>(), 2);
+        assert_eq!(core::mem::size_of::<PageStateCache<16>>(), 17);
+        // 9 * num_pages + 1 (+alignment)
+        assert_eq!(core::mem::size_of::<PagePointerCache<0>>(), 4);
+        assert_eq!(core::mem::size_of::<PagePointerCache<1>>(), 12);
+        assert_eq!(core::mem::size_of::<PagePointerCache<16>>(), 148);
+        // 9 * num_pages + (sizeof<key>() + 4) * num_keys (+alignment)
+        assert_eq!(core::mem::size_of::<KeyPointerCache<0, u8, 0>>(), 4);
+        assert_eq!(core::mem::size_of::<KeyPointerCache<1, u8, 1>>(), 20);
+        assert_eq!(core::mem::size_of::<KeyPointerCache<16, u8, 1>>(), 156);
+        assert_eq!(core::mem::size_of::<KeyPointerCache<16, u8, 16>>(), 276);
+        assert_eq!(core::mem::size_of::<KeyPointerCache<1024, u8, 16>>(), 9348);
+    }
+}

@@ -58,7 +58,7 @@ impl<S: NorFlash> RingbufferConfig<S> {
 
 // Invariants:
 // * Structure: OOOCCCCPOOO
-// * Structure while moving: OOOCCCCPPOO and afterwards OOOCCCCCPOO
+// * Structure while moving: OOOCCCCCOOO and afterwards OOOCCCCCPOO
 // * Last element is in the only PartialClosed page or last Closed page
 // * First element is somewhere in the Closed or PartialClosed pages
 
@@ -183,7 +183,8 @@ impl<S: NorFlash> RingbufferStorage<S> {
             return Err(Error::ItemTooBig);
         }
 
-        let current_page = self.find_youngest_page().await?;
+        let state = self.ensure_state().await?;
+        let current_page = state.end_page;
 
         let page_data_start_address =
             calculate_page_address::<S>(self.flash_range(), current_page) + S::WORD_SIZE as u32;
@@ -194,6 +195,7 @@ impl<S: NorFlash> RingbufferStorage<S> {
 
         // Find the last item on the page so we know where we need to write
 
+        // TODO something more intelligent
         let mut next_address = self
             .inner
             .find_next_free_item_spot(
@@ -541,60 +543,6 @@ impl<S: NorFlash> RingbufferStorage<S> {
             #[cfg(feature = "_test")]
             backtrace: std::backtrace::Backtrace::capture(),
         });
-    }
-
-    /// Find the page that we can potentially write to (or if it does not fit what needs to be written, the one after that).
-    /// This page must be the single `PartialClosed` page or the first `Open` page.
-    async fn find_current_page(&mut self) -> Result<usize, Error<S::Error>> {
-        if let Some(last_known_page) = self.current_page {
-            Ok(last_known_page)
-        } else {
-            // Scan all pages to find either the PartialClosed page or the last Closed page in a sequence of Closed pages.
-            let mut last_closed_page = None;
-            for page_index in self.inner.get_pages(0) {
-                match self.inner.get_page_state(page_index).await? {
-                    PageState::PartialOpen => {
-                        self.current_page = Some(page_index);
-                        return Ok(page_index);
-                    }
-                    PageState::Open => {
-                        if last_closed_page.is_some() {
-                            self.current_page = Some(page_index);
-                            return Ok(page_index);
-                        }
-                    }
-                    PageState::Closed => last_closed_page = Some(page_index),
-                }
-            }
-
-            if let Some(last_closed_page) = last_closed_page {
-                let possibly_open_page = self.inner.next_page(last_closed_page);
-                if self.inner.get_page_state(possibly_open_page).await? == PageState::Open {
-                    Ok(possibly_open_page)
-                } else {
-                    // All pages are closed... This is not correct.
-                    Err(Error::Corrupted {
-                        #[cfg(feature = "_test")]
-                        backtrace: std::backtrace::Backtrace::capture(),
-                    })
-                }
-            } else {
-                // No closed pages found, hence we can just assume that the entire partition is empty and yield the first.
-                Ok(0)
-            }
-        }
-    }
-
-    async fn find_oldest_page(&mut self) -> Result<usize, Error<S::Error>> {
-        let youngest_page = self.find_youngest_page().await?;
-
-        // The oldest page is the first non-open page after the youngest page
-        let oldest_closed_page = self
-            .inner
-            .find_first_page(youngest_page, PageState::Closed)
-            .await?;
-
-        Ok(oldest_closed_page.unwrap_or(youngest_page))
     }
 
     /// Try to repair the state of the flash to hopefull get back everything in working order.
